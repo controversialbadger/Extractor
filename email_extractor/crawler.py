@@ -6,7 +6,10 @@ import asyncio
 from urllib.parse import urlparse
 import time
 
-from config import MAX_CONTACT_PAGES, MAX_PAGES_PER_DOMAIN, GLOBAL_TIMEOUT
+from config import (
+    MAX_CONTACT_PAGES, MAX_PAGES_PER_DOMAIN, GLOBAL_TIMEOUT,
+    CONTACT_PAGE_SEARCH_TIMEOUT
+)
 from utils import normalize_url, is_same_domain, logger
 
 class Crawler:
@@ -65,7 +68,7 @@ class Crawler:
     
     async def find_contact_pages(self, url):
         """
-        Find contact pages starting from the given URL.
+        Find contact pages starting from the given URL with timeout protection.
         
         Args:
             url (str): The starting URL
@@ -73,6 +76,20 @@ class Crawler:
         Returns:
             list: List of contact page URLs
         """
+        try:
+            # Create a task with timeout
+            crawl_task = asyncio.create_task(self._find_contact_pages_impl(url))
+            try:
+                return await asyncio.wait_for(crawl_task, timeout=CONTACT_PAGE_SEARCH_TIMEOUT)
+            except asyncio.TimeoutError:
+                logger.warning(f"Contact page search timed out for {url}")
+                return []
+        except Exception as e:
+            logger.error(f"Error finding contact pages: {str(e)}")
+            return []
+
+    async def _find_contact_pages_impl(self, url):
+        """Implementation of contact page finding with proper error handling."""
         self.start_time = time.time()
         self.visited_urls = set()
         self.contact_pages = []

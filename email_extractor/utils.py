@@ -126,7 +126,13 @@ def is_likely_contact_page(url, link_text=None):
     
     # Check URL path for contact keywords
     for keyword in ALL_CONTACT_KEYWORDS:
-        if keyword.lower() in url_lower:
+        keyword_lower = keyword.lower()
+        # Exact match in path gets higher score
+        if f"/{keyword_lower}" in url_lower or f"/{keyword_lower}/" in url_lower:
+            score += 7
+            break
+        # Partial match in URL
+        elif keyword_lower in url_lower:
             score += 5
             break
     
@@ -134,9 +140,35 @@ def is_likely_contact_page(url, link_text=None):
     if link_text:
         link_text_lower = link_text.lower()
         for keyword in ALL_CONTACT_KEYWORDS:
-            if keyword.lower() in link_text_lower:
+            keyword_lower = keyword.lower()
+            # Exact match in link text gets higher score
+            if link_text_lower == keyword_lower:
+                score += 8
+                break
+            # Partial match in link text
+            elif keyword_lower in link_text_lower:
                 score += 5
                 break
+    
+    # Check for common contact page patterns in URL
+    contact_patterns = [
+        r'/contact', r'/kontakt', r'/contacto', r'/contatti', r'/contact-us',
+        r'/about', r'/about-us', r'/ueber-uns', r'/impressum', r'/imprint',
+        r'/get-in-touch', r'/reach-us', r'/reach-out', r'/connect'
+    ]
+    
+    for pattern in contact_patterns:
+        if re.search(pattern, url_lower):
+            score += 3
+            break
+    
+    # Boost score for URLs with 'contact' or equivalent in the path
+    if '/contact' in url_lower or '/kontakt' in url_lower:
+        score += 2
+    
+    # Penalize very long URLs (likely not contact pages)
+    if len(url) > 100:
+        score -= 2
     
     return min(score, 10)  # Cap at 10
 

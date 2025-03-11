@@ -3,18 +3,21 @@ Configuration settings for the Email Extractor.
 """
 
 # Timeout settings (in seconds)
-HTTP_TIMEOUT = 30
-PLAYWRIGHT_TIMEOUT = 60
-GLOBAL_TIMEOUT = 300  # 5 minutes max per website
+HTTP_TIMEOUT = 15  # Reduced from 30
+PLAYWRIGHT_TIMEOUT = 20  # Reduced from 60
+GLOBAL_TIMEOUT = 120  # Reduced from 300 (2 minutes max per website)
+COOKIE_BANNER_TIMEOUT = 3  # Timeout for cookie banner handling
+PAGE_NAVIGATION_TIMEOUT = 15  # Timeout for page navigation
+CONTACT_PAGE_SEARCH_TIMEOUT = 10  # Timeout for contact page search
 
 # Retry settings
-MAX_RETRIES = 3
-RETRY_BACKOFF_FACTOR = 2
+MAX_RETRIES = 2  # Reduced from 3
+RETRY_BACKOFF_FACTOR = 1  # Reduced from 2
 
 # Crawler settings
-MAX_CONTACT_PAGES = 5
-MAX_DEPTH = 3  # Maximum depth for crawling
-MAX_PAGES_PER_DOMAIN = 20  # Safety limit
+MAX_CONTACT_PAGES = 3  # Reduced from 5
+MAX_DEPTH = 2  # Reduced from 3
+MAX_PAGES_PER_DOMAIN = 10  # Reduced from 20
 
 # User-Agent settings
 USER_AGENTS = [
@@ -27,7 +30,7 @@ USER_AGENTS = [
 # Playwright settings
 HEADLESS = True
 BROWSER_TYPE = "chromium"  # Options: chromium, firefox, webkit
-SLOW_MO = 50  # Slow down Playwright operations by 50ms
+SLOW_MO = 10  # Reduced from 50ms
 
 # Output settings
 OUTPUT_FILE = "output.txt"

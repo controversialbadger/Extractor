@@ -12,7 +12,7 @@ from http_handler import HTTPHandler
 from playwright_handler import PlaywrightHandler
 from crawler import Crawler
 from extractor import EmailExtractor
-from config import OUTPUT_FILE
+from config import OUTPUT_FILE, GLOBAL_TIMEOUT
 from utils import logger
 
 # Global variables for cleanup
@@ -51,23 +51,32 @@ async def setup_extractor():
 
 async def extract_emails_from_url(url):
     """
-    Extract emails from a URL.
+    Extract emails from a URL with a global timeout.
     
     Args:
         url (str): The URL to extract emails from
     """
     async with setup_extractor() as extractor:
-        emails = await extractor.extract_emails_from_url(url)
-        
-        # Save emails to output file
-        if emails:
-            with open(OUTPUT_FILE, 'a') as f:
-                for email in emails:
-                    f.write(f"{email}\n")
-            
-            logger.info(f"Saved {len(emails)} emails to {OUTPUT_FILE}")
-        else:
-            logger.warning(f"No emails found for {url}")
+        try:
+            # Create a task with a global timeout
+            extraction_task = asyncio.create_task(extractor.extract_emails_from_url(url))
+            try:
+                emails = await asyncio.wait_for(extraction_task, timeout=GLOBAL_TIMEOUT)
+                
+                # Save emails to output file
+                if emails:
+                    with open(OUTPUT_FILE, 'a') as f:
+                        for email in emails:
+                            f.write(f"{email}\n")
+                    
+                    logger.info(f"Saved {len(emails)} emails to {OUTPUT_FILE}")
+                else:
+                    logger.warning(f"No emails found for {url}")
+            except asyncio.TimeoutError:
+                logger.error(f"Global timeout reached for {url}")
+                return
+        except Exception as e:
+            logger.error(f"Error extracting emails from {url}: {str(e)}")
 
 async def main():
     """Main entry point for the Email Extractor."""
@@ -96,8 +105,19 @@ async def main():
             if not url:
                 continue
             
-            # Extract emails
-            await extract_emails_from_url(url)
+            # Create a task with a global timeout
+            start_time = time.time()
+            try:
+                # Extract emails with timeout protection
+                await extract_emails_from_url(url)
+                
+                # Log processing time
+                elapsed = time.time() - start_time
+                logger.info(f"Processing completed in {elapsed:.2f} seconds")
+            except asyncio.TimeoutError:
+                logger.error(f"Processing timed out after {GLOBAL_TIMEOUT} seconds")
+            except Exception as e:
+                logger.error(f"Error processing URL: {str(e)}")
             
         except KeyboardInterrupt:
             break

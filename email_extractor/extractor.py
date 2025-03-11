@@ -81,8 +81,8 @@ class EmailExtractor:
         homepage_emails = self.http_handler.extract_emails_from_page(normalized_url)
         self._add_emails(homepage_emails)
         
-        # If we found emails and haven't reached the timeout, we're done
-        if self.extracted_emails and not self._is_timeout_reached():
+        # If we found emails, we're done - no need for Playwright
+        if self.extracted_emails:
             logger.info(f"Found {len(self.extracted_emails)} emails on homepage using HTTP")
             return self.extracted_emails
         
@@ -92,19 +92,20 @@ class EmailExtractor:
         # Step 3: Extract emails from contact pages using HTTP
         for contact_url in contact_pages:
             if self._is_timeout_reached():
+                logger.warning("Global timeout reached, stopping extraction")
                 break
                 
             contact_emails = self.http_handler.extract_emails_from_page(contact_url)
             self._add_emails(contact_emails)
             
-            # If we found emails, we can stop
+            # If we found emails, we can stop - no need for Playwright
             if self.extracted_emails:
                 logger.info(f"Found {len(self.extracted_emails)} emails on contact pages using HTTP")
                 return self.extracted_emails
         
-        # Step 4: If no emails found or timeout reached, try Playwright
+        # Step 4: If no emails found and not timed out, try Playwright on homepage
         if not self.extracted_emails and not self._is_timeout_reached():
-            logger.info("No emails found with HTTP, trying Playwright")
+            logger.info("No emails found with HTTP, trying Playwright on homepage")
             
             # Try homepage with Playwright
             homepage_emails_pw = await self.playwright_handler.extract_emails_from_page(normalized_url)
@@ -115,9 +116,11 @@ class EmailExtractor:
                 logger.info(f"Found {len(self.extracted_emails)} emails on homepage using Playwright")
                 return self.extracted_emails
             
-            # Try contact pages with Playwright
+            # Step 5: If still no emails, try contact pages with Playwright
+            logger.info("No emails found on homepage with Playwright, trying contact pages")
             for contact_url in contact_pages:
                 if self._is_timeout_reached():
+                    logger.warning("Global timeout reached, stopping extraction")
                     break
                     
                 contact_emails_pw = await self.playwright_handler.extract_emails_from_page(contact_url)
@@ -127,6 +130,12 @@ class EmailExtractor:
                 if self.extracted_emails:
                     logger.info(f"Found {len(self.extracted_emails)} emails on contact pages using Playwright")
                     return self.extracted_emails
+        
+        # If we reached here, we either found no emails or hit the timeout
+        if self._is_timeout_reached():
+            logger.warning("Email extraction stopped due to timeout")
+        else:
+            logger.info("No emails found after trying all methods")
         
         logger.info(f"Extraction complete. Found {len(self.extracted_emails)} emails")
         return self.extracted_emails

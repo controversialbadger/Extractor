@@ -5,12 +5,13 @@ Playwright handler for the Email Extractor.
 import asyncio
 import re
 import time
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, TimeoutError
 from bs4 import BeautifulSoup
 
 from config import (
     PLAYWRIGHT_TIMEOUT, HEADLESS, BROWSER_TYPE, 
-    SLOW_MO, ACCEPT_COOKIE_KEYWORDS
+    SLOW_MO, ACCEPT_COOKIE_KEYWORDS, COOKIE_BANNER_TIMEOUT,
+    PAGE_NAVIGATION_TIMEOUT, CONTACT_PAGE_SEARCH_TIMEOUT
 )
 from utils import (
     get_random_user_agent, extract_emails_from_text, 
@@ -87,40 +88,60 @@ class PlaywrightHandler:
         await dialog.dismiss()
     
     async def _handle_cookie_banners(self):
-        """Attempt to handle cookie consent banners."""
+        """Attempt to handle cookie consent banners with a timeout."""
         try:
-            # Look for common cookie consent buttons
-            for keyword in ACCEPT_COOKIE_KEYWORDS:
-                # Try different selector strategies
-                selectors = [
-                    f"button:has-text('{keyword}')",
-                    f"button:has-text('{keyword.upper()}')",
-                    f"button:has-text('{keyword.capitalize()}')",
-                    f"a:has-text('{keyword}')",
-                    f"div:has-text('{keyword}'):visible",
-                    f"[id*='cookie'] button",
-                    f"[class*='cookie'] button",
-                    f"[id*='consent'] button",
-                    f"[class*='consent'] button",
-                    f"[id*='gdpr'] button",
-                    f"[class*='gdpr'] button"
-                ]
-                
-                for selector in selectors:
-                    try:
-                        button = await self.page.wait_for_selector(selector, timeout=5000)
-                        if button:
-                            await button.click()
-                            logger.info(f"Clicked cookie consent button: {selector}")
-                            await self.page.wait_for_timeout(1000)  # Wait for banner to disappear
-                            return True
-                    except:
-                        continue
-            
-            return False
+            # Set a timeout for cookie banner handling
+            cookie_task = asyncio.create_task(self._find_and_click_cookie_button())
+            try:
+                await asyncio.wait_for(cookie_task, timeout=COOKIE_BANNER_TIMEOUT)
+                return True
+            except asyncio.TimeoutError:
+                logger.debug("Cookie banner handling timed out")
+                return False
         except Exception as e:
             logger.warning(f"Error handling cookie banner: {str(e)}")
             return False
+
+    async def _find_and_click_cookie_button(self):
+        """Find and click cookie consent buttons."""
+        for keyword in ACCEPT_COOKIE_KEYWORDS:
+            # Try different selector strategies
+            selectors = [
+                f"button:has-text('{keyword}')",
+                f"button:has-text('{keyword.upper()}')",
+                f"button:has-text('{keyword.capitalize()}')",
+                f"a:has-text('{keyword}')",
+                f"div:has-text('{keyword}'):visible",
+                f"[id*='cookie'] button",
+                f"[class*='cookie'] button",
+                f"[id*='consent'] button",
+                f"[class*='consent'] button",
+                f"[id*='gdpr'] button",
+                f"[class*='gdpr'] button"
+            ]
+            
+            for selector in selectors:
+                try:
+                    # Reduced timeout for selector waiting and added state option
+                    button = await self.page.wait_for_selector(
+                        selector, 
+                        timeout=1000,
+                        state="visible"
+                    )
+                    if button:
+                        try:
+                            await button.click()
+                            logger.info(f"Clicked cookie consent button: {selector}")
+                            await self.page.wait_for_timeout(500)  # Reduced wait time
+                            return True
+                        except Exception as e:
+                            logger.debug(f"Failed to click {selector}: {str(e)}")
+                            continue
+                except Exception:
+                    # Silently continue if selector not found
+                    continue
+        
+        return False
     
     async def navigate_to_url(self, url):
         """
@@ -141,29 +162,46 @@ class PlaywrightHandler:
         try:
             # Navigate to the URL
             logger.info(f"Navigating to URL with Playwright: {url}")
-            response = await self.page.goto(url, wait_until="networkidle", timeout=PLAYWRIGHT_TIMEOUT * 1000)
+            try:
+                # Changed from networkidle to domcontentloaded for faster loading
+                response = await self.page.goto(
+                    url, 
+                    wait_until="domcontentloaded", 
+                    timeout=PAGE_NAVIGATION_TIMEOUT * 1000
+                )
+            except Exception as e:
+                logger.warning(f"Navigation error for {url}: {str(e)}, trying to extract content anyway")
+                response = None
             
+            # Even if navigation times out, try to get content
             if not response:
-                logger.warning(f"Failed to navigate to {url}: No response")
-                return False, None, None
-            
-            if not response.ok:
+                try:
+                    # Check if we have any content
+                    html_content = await self.page.content()
+                    if not html_content or len(html_content) < 100:  # Very small content likely means error
+                        logger.warning(f"No usable content from {url}")
+                        return False, None, None
+                except:
+                    logger.warning(f"Failed to get content from {url}")
+                    return False, None, None
+            elif not response.ok:
                 logger.warning(f"Failed to navigate to {url}, status: {response.status}")
                 return False, None, None
             
             # Handle cookie banners
             await self._handle_cookie_banners()
             
-            # Wait for the page to be fully loaded
-            await self.page.wait_for_load_state("networkidle")
-            
             # Get the page content
-            html_content = await self.page.content()
-            
-            # Parse with BeautifulSoup
-            soup = BeautifulSoup(html_content, 'lxml')
-            
-            return True, html_content, soup
+            try:
+                html_content = await self.page.content()
+                
+                # Parse with BeautifulSoup
+                soup = BeautifulSoup(html_content, 'lxml')
+                
+                return True, html_content, soup
+            except Exception as e:
+                logger.error(f"Error getting page content: {str(e)}")
+                return False, None, None
             
         except Exception as e:
             logger.error(f"Error navigating to {url} with Playwright: {str(e)}")
@@ -171,7 +209,7 @@ class PlaywrightHandler:
     
     async def extract_emails_from_page(self, url):
         """
-        Extract emails from a web page using Playwright.
+        Extract emails from a web page using Playwright with timeout protection.
         
         Args:
             url (str): The URL to extract emails from
@@ -179,6 +217,20 @@ class PlaywrightHandler:
         Returns:
             list: List of extracted email addresses
         """
+        try:
+            # Create a task with timeout
+            extraction_task = asyncio.create_task(self._extract_emails_impl(url))
+            try:
+                return await asyncio.wait_for(extraction_task, timeout=PLAYWRIGHT_TIMEOUT)
+            except asyncio.TimeoutError:
+                logger.warning(f"Email extraction timed out for {url}")
+                return []
+        except Exception as e:
+            logger.error(f"Error in extract_emails_from_page: {str(e)}")
+            return []
+
+    async def _extract_emails_impl(self, url):
+        """Implementation of email extraction with proper error handling."""
         success, html_content, soup = await self.navigate_to_url(url)
         if not success or not html_content:
             return []
@@ -220,11 +272,14 @@ class PlaywrightHandler:
             emails.extend(js_emails)
             
             # Look for elements with onclick handlers that might reveal emails
+            # Limit the number of elements to check to avoid long processing
             email_elements = await self.page.query_selector_all('[onclick*="mail"], [onclick*="email"]')
-            for element in email_elements:
+            for i, element in enumerate(email_elements):
+                if i >= 5:  # Limit to 5 elements to avoid long processing
+                    break
                 try:
                     await element.click()
-                    await self.page.wait_for_timeout(500)  # Wait for any changes
+                    await self.page.wait_for_timeout(300)  # Reduced wait time
                     
                     # Get updated page content
                     updated_html = await self.page.content()
@@ -252,7 +307,7 @@ class PlaywrightHandler:
     
     async def find_contact_pages(self, base_url):
         """
-        Find potential contact pages from the current page.
+        Find potential contact pages from the current page with timeout protection.
         
         Args:
             base_url (str): The base URL
@@ -260,6 +315,20 @@ class PlaywrightHandler:
         Returns:
             list: List of contact page URLs sorted by relevance
         """
+        try:
+            # Create a task with timeout
+            contact_task = asyncio.create_task(self._find_contact_pages_impl(base_url))
+            try:
+                return await asyncio.wait_for(contact_task, timeout=CONTACT_PAGE_SEARCH_TIMEOUT)
+            except asyncio.TimeoutError:
+                logger.warning(f"Contact page search timed out for {base_url}")
+                return []
+        except Exception as e:
+            logger.error(f"Error in find_contact_pages: {str(e)}")
+            return []
+    
+    async def _find_contact_pages_impl(self, base_url):
+        """Implementation of contact page finding with proper error handling."""
         try:
             # Get all links from the page
             links = await self.page.query_selector_all('a[href]')
