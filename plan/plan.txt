@@ -1,0 +1,160 @@
+I want to create an Email extractor that will work as follows:
+
+I will paste URLs one by one into the console.
+
+1.  The script will first attempt an HTTP request. If no email is found on the homepage or contact pages, or if the HTTP request fails, it will use Playwright as a fallback for extraction.
+
+2.  Extraction should be performed on the homepage and up to 5 contact pages, based on keywords like "contact, impressum, about us" (supporting all EU languages). The script should not use hardcoded paths but intelligently find these pages on the website. This needs to be top-notch/high-quality.
+
+3.  Cookie support and anti-bot protection are required.
+
+4.  Extracted emails should be saved one per line in `output.txt`.
+
+5.  Mechanisms to prevent freezing and getting stuck are necessary.
+
+Prepare a project that fulfills the above requirements. It should be professional as it will be used for extracting a large number of URLs. It needs to be very accurate and handle all email obfuscation methods, regardless of whether it's JavaScript or anything else."
+
+**Project Outline: Professional Email Extractor**
+
+This outline details a Python-based project designed to be robust, accurate, and handle the complexities of modern websites.
+
+## Project Structure
+
+```
+email_extractor/
+├── main.py                # Main script - handles input, orchestration, output
+├── extractor.py           # Core email extraction logic (regex, obfuscation handling)
+├── crawler.py             # Contact page discovery logic
+├── http_handler.py        # Handles HTTP requests (requests library)
+├── playwright_handler.py  # Handles Playwright interactions
+├── utils.py               # Utility functions (language keywords, regex patterns, etc.)
+├── config.py              # Configuration settings (timeouts, user-agent, etc.)
+├── requirements.txt       # Python dependencies
+```
+
+## Component Details
+
+### main.py
+- Provides a console interface for URL input
+- Orchestrates the extraction workflow
+- Manages overall process flow and failover mechanisms
+- Handles output writing to output.txt
+- Implements error handling and recovery
+- Manages timeout controls to prevent freezing
+
+### extractor.py
+- Implements comprehensive email extraction algorithms
+- Handles various email obfuscation techniques:
+  - JavaScript obfuscation
+  - CSS display manipulation
+  - HTML entity encoding
+  - Image-based emails
+  - Text splitting and reassembly
+- Normalizes and validates extracted emails
+- Removes duplicates and filters out invalid addresses
+
+### crawler.py
+- Discovers potential contact pages using intelligent link analysis
+- Supports multilingual contact page detection across all EU languages
+- Implements link prioritization based on relevance scoring
+- Limits crawling to a reasonable depth (homepage + 5 contact pages)
+- Handles URL normalization and deduplication
+
+### http_handler.py
+- Manages initial HTTP requests using the requests library
+- Implements retry logic with exponential backoff
+- Handles common HTTP errors and exceptions
+- Supports cookies and session management
+- Implements custom User-Agent rotation
+
+### playwright_handler.py
+- Sets up and manages Playwright browser instances
+- Handles JavaScript rendering and dynamic content
+- Implements anti-bot evasion techniques
+- Manages cookie consent dialogs
+- Extracts emails from JavaScript-rendered content
+- Implements browser cleanup and resource management
+
+### utils.py
+- Provides multilingual contact page keywords for all EU languages
+- Implements sophisticated regex patterns for email detection
+- Includes utility functions for text processing and normalization
+- Supplies helper methods for URL manipulation and validation
+- Implements logging and debugging utilities
+
+### config.py
+- Defines timeouts for various operations
+- Configures user-agent strings and rotation strategy
+- Sets crawler parameters (depth, breadth, etc.)
+- Specifies retry policies and backoff settings
+- Contains performance tuning parameters
+
+### requirements.txt
+```
+requests>=2.28.1
+playwright>=1.32.0
+beautifulsoup4>=4.11.1
+lxml>=4.9.1
+tldextract>=3.4.0
+validators>=0.20.0
+python-whois>=0.7.3
+fake-useragent>=1.1.1
+tenacity>=8.1.0
+```
+
+## Key Features
+
+1. **Dual Extraction Strategy**:
+   - Fast HTTP requests as primary method
+   - Playwright fallback for JavaScript-heavy sites
+
+2. **Intelligent Contact Page Discovery**:
+   - Multi-language support for all EU countries
+   - Semantic relevance scoring for link prioritization
+   - Context-aware navigation
+
+3. **Advanced Email Extraction**:
+   - Handles all common obfuscation techniques
+   - Support for partial email reconstruction
+   - Validation and normalization
+
+4. **Robustness Measures**:
+   - Timeout controls to prevent freezing
+   - Memory management to handle large sites
+   - Graceful error recovery
+
+5. **Anti-Bot Protection**:
+   - Cookie handling
+   - User-agent rotation
+   - Request rate limiting
+   - Headless browser fingerprint modification
+
+## Implementation Approach
+
+1. **Initial Setup**:
+   - Environment configuration
+   - Dependency installation
+   - Configuration tuning
+
+2. **Core Components Development**:
+   - Build HTTP handler with basic extraction
+   - Implement crawler logic for contact page discovery
+   - Develop email extraction algorithms
+
+3. **Playwright Integration**:
+   - Set up browser automation
+   - Implement JavaScript rendering
+   - Handle anti-bot measures
+
+4. **System Integration**:
+   - Connect all components through main.py
+   - Implement failover logic
+   - Add result storage
+
+5. **Testing and Optimization**:
+   - Test against various website types
+   - Benchmark performance
+   - Optimize resource usage
+   - Fine-tune extraction accuracy
+
+This project structure ensures a professional, high-quality email extraction system capable of handling a large volume of URLs with exceptional accuracy across various website architectures and email obfuscation techniques.
