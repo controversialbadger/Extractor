@@ -1,0 +1,145 @@
+"""
+Core email extraction logic for the Email Extractor.
+"""
+
+import asyncio
+import time
+from urllib.parse import urlparse
+
+from config import MAX_CONTACT_PAGES, GLOBAL_TIMEOUT
+from utils import logger, normalize_url, is_valid_url
+
+class EmailExtractor:
+    """Handles the email extraction process."""
+    
+    def __init__(self, http_handler, playwright_handler, crawler):
+        """
+        Initialize the email extractor.
+        
+        Args:
+            http_handler: The HTTP handler for making requests
+            playwright_handler: The Playwright handler for JavaScript-heavy sites
+            crawler: The crawler for finding contact pages
+        """
+        self.http_handler = http_handler
+        self.playwright_handler = playwright_handler
+        self.crawler = crawler
+        self.start_time = None
+        self.extracted_emails = set()
+    
+    def _is_timeout_reached(self):
+        """Check if the global timeout has been reached."""
+        if not self.start_time:
+            return False
+        
+        elapsed = time.time() - self.start_time
+        return elapsed >= GLOBAL_TIMEOUT
+    
+    def _normalize_input_url(self, url):
+        """
+        Normalize the input URL.
+        
+        Args:
+            url (str): The URL to normalize
+            
+        Returns:
+            str: The normalized URL or None if invalid
+        """
+        # Add http:// if no scheme is provided
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+        
+        # Validate the URL
+        if not is_valid_url(url):
+            logger.error(f"Invalid URL: {url}")
+            return None
+        
+        # Normalize the URL
+        return normalize_url(url)
+    
+    async def extract_emails_from_url(self, url):
+        """
+        Extract emails from a URL and its contact pages.
+        
+        Args:
+            url (str): The URL to extract emails from
+            
+        Returns:
+            set: Set of extracted email addresses
+        """
+        self.start_time = time.time()
+        self.extracted_emails = set()
+        
+        # Normalize the input URL
+        normalized_url = self._normalize_input_url(url)
+        if not normalized_url:
+            return self.extracted_emails
+        
+        logger.info(f"Starting email extraction for: {normalized_url}")
+        
+        # Step 1: Try to extract emails from the homepage using HTTP
+        homepage_emails = self.http_handler.extract_emails_from_page(normalized_url)
+        self._add_emails(homepage_emails)
+        
+        # If we found emails and haven't reached the timeout, we're done
+        if self.extracted_emails and not self._is_timeout_reached():
+            logger.info(f"Found {len(self.extracted_emails)} emails on homepage using HTTP")
+            return self.extracted_emails
+        
+        # Step 2: Find contact pages
+        contact_pages = await self.crawler.find_contact_pages(normalized_url)
+        
+        # Step 3: Extract emails from contact pages using HTTP
+        for contact_url in contact_pages:
+            if self._is_timeout_reached():
+                break
+                
+            contact_emails = self.http_handler.extract_emails_from_page(contact_url)
+            self._add_emails(contact_emails)
+            
+            # If we found emails, we can stop
+            if self.extracted_emails:
+                logger.info(f"Found {len(self.extracted_emails)} emails on contact pages using HTTP")
+                return self.extracted_emails
+        
+        # Step 4: If no emails found or timeout reached, try Playwright
+        if not self.extracted_emails and not self._is_timeout_reached():
+            logger.info("No emails found with HTTP, trying Playwright")
+            
+            # Try homepage with Playwright
+            homepage_emails_pw = await self.playwright_handler.extract_emails_from_page(normalized_url)
+            self._add_emails(homepage_emails_pw)
+            
+            # If we found emails, we're done
+            if self.extracted_emails:
+                logger.info(f"Found {len(self.extracted_emails)} emails on homepage using Playwright")
+                return self.extracted_emails
+            
+            # Try contact pages with Playwright
+            for contact_url in contact_pages:
+                if self._is_timeout_reached():
+                    break
+                    
+                contact_emails_pw = await self.playwright_handler.extract_emails_from_page(contact_url)
+                self._add_emails(contact_emails_pw)
+                
+                # If we found emails, we can stop
+                if self.extracted_emails:
+                    logger.info(f"Found {len(self.extracted_emails)} emails on contact pages using Playwright")
+                    return self.extracted_emails
+        
+        logger.info(f"Extraction complete. Found {len(self.extracted_emails)} emails")
+        return self.extracted_emails
+    
+    def _add_emails(self, emails):
+        """
+        Add emails to the extracted emails set.
+        
+        Args:
+            emails (list): List of emails to add
+        """
+        if not emails:
+            return
+            
+        for email in emails:
+            self.extracted_emails.add(email)
