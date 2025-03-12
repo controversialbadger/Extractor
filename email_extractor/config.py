@@ -8,7 +8,7 @@ PLAYWRIGHT_TIMEOUT = 20  # Reduced from 60
 GLOBAL_TIMEOUT = 120  # Reduced from 300 (2 minutes max per website)
 COOKIE_BANNER_TIMEOUT = 3  # Timeout for cookie banner handling
 PAGE_NAVIGATION_TIMEOUT = 15  # Timeout for page navigation
-CONTACT_PAGE_SEARCH_TIMEOUT = 10  # Timeout for contact page search
+CONTACT_PAGE_SEARCH_TIMEOUT = 30  # Increased from 10 to 30 seconds
 
 # Retry settings
 MAX_RETRIES = 2  # Reduced from 3

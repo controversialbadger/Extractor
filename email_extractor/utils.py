@@ -124,12 +124,25 @@ def is_likely_contact_page(url, link_text=None):
     score = 0
     url_lower = url.lower()
     
+    # Exact contact page path match gets highest priority
+    exact_contact_patterns = [
+        r'/contact/?$', r'/kontakt/?$', r'/contacto/?$', r'/contatti/?$', r'/contact-us/?$',
+        r'/contacte/?$', r'/contactez-nous/?$', r'/contactenos/?$', r'/kapcsolat/?$',
+        r'/contato/?$', r'/contacto/?$', r'/contactar/?$', r'/contacte-ne/?$',
+        r'/contactar-nos/?$', r'/contacta/?$', r'/contacta-nos/?$', r'/contactanos/?$'
+    ]
+    
+    for pattern in exact_contact_patterns:
+        if re.search(pattern, url_lower):
+            score += 10  # Maximum score for exact contact page match
+            return score  # Return immediately as this is the highest priority
+    
     # Check URL path for contact keywords
     for keyword in ALL_CONTACT_KEYWORDS:
         keyword_lower = keyword.lower()
         # Exact match in path gets higher score
         if f"/{keyword_lower}" in url_lower or f"/{keyword_lower}/" in url_lower:
-            score += 7
+            score += 8
             break
         # Partial match in URL
         elif keyword_lower in url_lower:
@@ -139,6 +152,20 @@ def is_likely_contact_page(url, link_text=None):
     # If link text is provided, check it for contact keywords
     if link_text:
         link_text_lower = link_text.lower()
+        
+        # Exact match for "contact" or equivalent in link text gets highest score
+        exact_contact_keywords = [
+            'contact', 'kontakt', 'contacto', 'contatti', 'contact us', 'contacte',
+            'contactez-nous', 'contactenos', 'kapcsolat', 'contato', 'contactar',
+            'contacte-ne', 'contactar-nos', 'contacta', 'contacta-nos', 'contactanos'
+        ]
+        
+        for keyword in exact_contact_keywords:
+            if link_text_lower == keyword:
+                score += 9
+                break
+        
+        # Check other contact keywords
         for keyword in ALL_CONTACT_KEYWORDS:
             keyword_lower = keyword.lower()
             # Exact match in link text gets higher score
@@ -154,7 +181,10 @@ def is_likely_contact_page(url, link_text=None):
     contact_patterns = [
         r'/contact', r'/kontakt', r'/contacto', r'/contatti', r'/contact-us',
         r'/about', r'/about-us', r'/ueber-uns', r'/impressum', r'/imprint',
-        r'/get-in-touch', r'/reach-us', r'/reach-out', r'/connect'
+        r'/get-in-touch', r'/reach-us', r'/reach-out', r'/connect',
+        r'/contacte', r'/contactez-nous', r'/contactenos', r'/kapcsolat',
+        r'/contato', r'/contactar', r'/contacte-ne', r'/contactar-nos',
+        r'/contacta', r'/contacta-nos', r'/contactanos'
     ]
     
     for pattern in contact_patterns:
@@ -163,14 +193,35 @@ def is_likely_contact_page(url, link_text=None):
             break
     
     # Boost score for URLs with 'contact' or equivalent in the path
-    if '/contact' in url_lower or '/kontakt' in url_lower:
-        score += 2
+    contact_terms = [
+        '/contact', '/kontakt', '/contacto', '/contatti', '/contacte',
+        '/kapcsolat', '/contato', '/contactar', '/contacta'
+    ]
+    
+    for term in contact_terms:
+        if term in url_lower:
+            score += 3
+            break
     
     # Penalize very long URLs (likely not contact pages)
     if len(url) > 100:
         score -= 2
     
-    return min(score, 10)  # Cap at 10
+    # Penalize URLs that look like product or category pages
+    product_patterns = [
+        r'/product', r'/category', r'/shop', r'/store', r'/item', r'/catalog',
+        r'/collection', r'/produkt', r'/kategorie', r'/produit', r'/catégorie',
+        r'/producto', r'/categoría', r'/prodotto', r'/categoria', r'/produkt',
+        r'/kategoria', r'/termék', r'/kategória', r'/produs', r'/categorie',
+        r'/echipament', r'/sporturi'  # Added specific patterns from the example
+    ]
+    
+    for pattern in product_patterns:
+        if re.search(pattern, url_lower):
+            score -= 3
+            break
+    
+    return min(max(score, 0), 10)  # Cap between 0 and 10
 
 def extract_emails_from_text(text):
     """Extract email addresses from text using regex."""

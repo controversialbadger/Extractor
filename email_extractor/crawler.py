@@ -10,7 +10,7 @@ from config import (
     MAX_CONTACT_PAGES, MAX_PAGES_PER_DOMAIN, GLOBAL_TIMEOUT,
     CONTACT_PAGE_SEARCH_TIMEOUT
 )
-from utils import normalize_url, is_same_domain, logger
+from utils import normalize_url, is_same_domain, logger, is_likely_contact_page
 
 class Crawler:
     """Handles the crawling logic for finding contact pages."""
@@ -97,8 +97,58 @@ class Crawler:
         # Start with the homepage
         await self._crawl_for_contact_pages(url, url)
         
+        # If no contact pages found or very few, try with Playwright directly
+        if len(self.contact_pages) < 2 and self.playwright_handler:
+            logger.info("Few or no contact pages found, trying with Playwright directly")
+            try:
+                # Navigate to the homepage with Playwright
+                success, _, _ = await self.playwright_handler.navigate_to_url(url)
+                if success:
+                    # Find contact pages using Playwright
+                    playwright_contact_pages = await self.playwright_handler.find_contact_pages(url)
+                    
+                    # Add new contact pages to the list
+                    for contact_url in playwright_contact_pages:
+                        if contact_url not in self.contact_pages:
+                            self.contact_pages.append(contact_url)
+            except Exception as e:
+                logger.error(f"Error finding contact pages with Playwright: {str(e)}")
+        
+        # If still no contact pages found, try to construct common contact page URLs
+        if len(self.contact_pages) == 0:
+            logger.info("No contact pages found, trying common contact page patterns")
+            
+            # Parse the base URL
+            parsed_url = urlparse(url)
+            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+            
+            # Common contact page paths in multiple languages
+            common_contact_paths = [
+                "/contact", "/contact-us", "/contacte", "/kontakt", 
+                "/contacto", "/contatti", "/about-us", "/about",
+                "/impressum", "/imprint"
+            ]
+            
+            # Add common contact page URLs to the list
+            for path in common_contact_paths:
+                contact_url = f"{base_url}{path}"
+                if contact_url not in self.contact_pages:
+                    self.contact_pages.append(contact_url)
+        
+        # Sort contact pages by likelihood score
+        scored_pages = []
+        for page in self.contact_pages:
+            score = is_likely_contact_page(page)
+            scored_pages.append((page, score))
+        
+        # Sort by score (highest first)
+        scored_pages.sort(key=lambda x: x[1], reverse=True)
+        
+        # Extract just the URLs, preserving order
+        sorted_contact_pages = [page for page, _ in scored_pages]
+        
         # Limit to the top MAX_CONTACT_PAGES contact pages
-        return self.contact_pages[:MAX_CONTACT_PAGES]
+        return sorted_contact_pages[:MAX_CONTACT_PAGES]
     
     async def _crawl_for_contact_pages(self, url, base_url):
         """

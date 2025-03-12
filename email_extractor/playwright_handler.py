@@ -5,6 +5,7 @@ Playwright handler for the Email Extractor.
 import asyncio
 import re
 import time
+from urllib.parse import urljoin, urlparse
 from playwright.async_api import async_playwright, TimeoutError
 from bs4 import BeautifulSoup
 
@@ -361,10 +362,30 @@ class PlaywrightHandler:
             # Extract just the URLs, preserving order but removing duplicates
             unique_urls = []
             seen = set()
-            for url, _ in contact_links:
+            for url, score in contact_links:
                 if url not in seen:
                     seen.add(url)
                     unique_urls.append(url)
+            
+            # If no contact pages found with high scores, try to construct common contact page URLs
+            if not any(is_likely_contact_page(url) > 7 for url in unique_urls):
+                # Parse the base URL
+                parsed_url = urlparse(base_url)
+                base_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"
+                
+                # Common contact page paths in multiple languages
+                common_contact_paths = [
+                    "/contact", "/contact-us", "/contacte", "/kontakt", 
+                    "/contacto", "/contatti", "/about-us", "/about",
+                    "/impressum", "/imprint"
+                ]
+                
+                # Add common contact page URLs to the list if they're not already there
+                for path in common_contact_paths:
+                    contact_url = f"{base_domain}{path}"
+                    if contact_url not in seen:
+                        seen.add(contact_url)
+                        unique_urls.insert(0, contact_url)  # Insert at the beginning to prioritize
             
             logger.info(f"Found {len(unique_urls)} potential contact pages using Playwright")
             return unique_urls
