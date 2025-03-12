@@ -86,15 +86,18 @@ class EmailExtractor:
             logger.info(f"Found {len(self.extracted_emails)} emails on homepage using HTTP")
             return self.extracted_emails
         
-        # Step 2: Find contact pages
+        # Step 2: Find contact pages using the crawler
+        # This will return contact pages sorted by likelihood score
         contact_pages = await self.crawler.find_contact_pages(normalized_url)
         
         # Step 3: Extract emails from contact pages using HTTP
+        # Start with the most likely contact pages
         for contact_url in contact_pages:
             if self._is_timeout_reached():
                 logger.warning("Global timeout reached, stopping extraction")
                 break
                 
+            logger.info(f"Checking contact page: {contact_url}")
             contact_emails = self.http_handler.extract_emails_from_page(contact_url)
             self._add_emails(contact_emails)
             
@@ -123,6 +126,7 @@ class EmailExtractor:
                     logger.warning("Global timeout reached, stopping extraction")
                     break
                     
+                logger.info(f"Checking contact page with Playwright: {contact_url}")
                 contact_emails_pw = await self.playwright_handler.extract_emails_from_page(contact_url)
                 self._add_emails(contact_emails_pw)
                 

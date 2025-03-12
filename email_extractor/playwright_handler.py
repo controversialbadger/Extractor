@@ -5,6 +5,7 @@ Playwright handler for the Email Extractor.
 import asyncio
 import re
 import time
+from urllib.parse import urljoin, urlparse
 from playwright.async_api import async_playwright, TimeoutError
 from bs4 import BeautifulSoup
 
@@ -16,7 +17,7 @@ from config import (
 from utils import (
     get_random_user_agent, extract_emails_from_text, 
     normalize_url, is_likely_contact_page, decode_email_entities,
-    logger
+    logger, get_contact_page_patterns
 )
 
 class PlaywrightHandler:
@@ -361,10 +362,56 @@ class PlaywrightHandler:
             # Extract just the URLs, preserving order but removing duplicates
             unique_urls = []
             seen = set()
-            for url, _ in contact_links:
+            for url, score in contact_links:
                 if url not in seen:
                     seen.add(url)
                     unique_urls.append(url)
+            
+            # If no contact pages found with high scores, try to construct common contact page URLs
+            if not any(is_likely_contact_page(url) > 7 for url in unique_urls):
+                # Parse the base URL
+                parsed_url = urlparse(base_url)
+                base_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"
+                
+                # Get structural patterns for intelligent URL construction
+                structural_patterns, position_indicators, common_url_segments = get_contact_page_patterns()
+                
+                # Generate potential contact page URLs based on structural patterns
+                potential_paths = set()
+                
+                # Add common URL segments as potential paths
+                for segment in common_url_segments:
+                    potential_paths.add(segment)
+                
+                # Generate paths based on common structural patterns
+                # For example, short single-word paths that are common for contact pages
+                potential_paths.add('/contact')
+                potential_paths.add('/about')
+                potential_paths.add('/info')
+                
+                # Add language-agnostic structural patterns
+                potential_paths.add('/c')  # Abbreviated form
+                potential_paths.add('/i')  # Info abbreviated
+                potential_paths.add('/help')
+                potential_paths.add('/support')
+                
+                # Try with common TLD-based language patterns if applicable
+                tld = parsed_url.netloc.split('.')[-1]
+                if tld in ['de', 'at', 'ch']:  # German-speaking countries
+                    potential_paths.add('/kontakt')
+                elif tld in ['fr', 'be']:  # French-speaking countries
+                    potential_paths.add('/contact')
+                elif tld in ['es']:  # Spanish-speaking countries
+                    potential_paths.add('/contacto')
+                elif tld in ['it']:  # Italian-speaking countries
+                    potential_paths.add('/contatti')
+                
+                # Add common contact page URLs to the list if they're not already there
+                for path in potential_paths:
+                    contact_url = f"{base_domain}{path}"
+                    if contact_url not in seen:
+                        seen.add(contact_url)
+                        unique_urls.insert(0, contact_url)  # Insert at the beginning to prioritize
             
             logger.info(f"Found {len(unique_urls)} potential contact pages using Playwright")
             return unique_urls

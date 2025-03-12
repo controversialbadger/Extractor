@@ -10,7 +10,7 @@ from config import (
     MAX_CONTACT_PAGES, MAX_PAGES_PER_DOMAIN, GLOBAL_TIMEOUT,
     CONTACT_PAGE_SEARCH_TIMEOUT
 )
-from utils import normalize_url, is_same_domain, logger
+from utils import normalize_url, is_same_domain, logger, is_likely_contact_page, get_contact_page_patterns
 
 class Crawler:
     """Handles the crawling logic for finding contact pages."""
@@ -97,8 +97,84 @@ class Crawler:
         # Start with the homepage
         await self._crawl_for_contact_pages(url, url)
         
+        # If no contact pages found or very few, try with Playwright directly
+        if len(self.contact_pages) < 2 and self.playwright_handler:
+            logger.info("Few or no contact pages found, trying with Playwright directly")
+            try:
+                # Navigate to the homepage with Playwright
+                success, _, _ = await self.playwright_handler.navigate_to_url(url)
+                if success:
+                    # Find contact pages using Playwright
+                    playwright_contact_pages = await self.playwright_handler.find_contact_pages(url)
+                    
+                    # Add new contact pages to the list
+                    for contact_url in playwright_contact_pages:
+                        if contact_url not in self.contact_pages:
+                            self.contact_pages.append(contact_url)
+            except Exception as e:
+                logger.error(f"Error finding contact pages with Playwright: {str(e)}")
+        
+        # If still no contact pages found, try to construct common contact page URLs
+        if len(self.contact_pages) == 0:
+            logger.info("No contact pages found, trying intelligent URL construction")
+            
+            # Parse the base URL
+            parsed_url = urlparse(url)
+            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+            
+            # Get structural patterns for intelligent URL construction
+            structural_patterns, position_indicators, common_url_segments = get_contact_page_patterns()
+            
+            # Generate potential contact page URLs based on structural patterns
+            potential_paths = set()
+            
+            # Add common URL segments as potential paths
+            for segment in common_url_segments:
+                potential_paths.add(segment)
+            
+            # Generate paths based on common structural patterns
+            # For example, short single-word paths that are common for contact pages
+            potential_paths.add('/contact')
+            potential_paths.add('/about')
+            potential_paths.add('/info')
+            
+            # Add language-agnostic structural patterns
+            potential_paths.add('/c')  # Abbreviated form
+            potential_paths.add('/i')  # Info abbreviated
+            potential_paths.add('/help')
+            potential_paths.add('/support')
+            
+            # Try with common TLD-based language patterns if applicable
+            tld = parsed_url.netloc.split('.')[-1]
+            if tld in ['de', 'at', 'ch']:  # German-speaking countries
+                potential_paths.add('/kontakt')
+            elif tld in ['fr', 'be']:  # French-speaking countries
+                potential_paths.add('/contact')
+            elif tld in ['es']:  # Spanish-speaking countries
+                potential_paths.add('/contacto')
+            elif tld in ['it']:  # Italian-speaking countries
+                potential_paths.add('/contatti')
+            
+            # Add common contact page URLs to the list
+            for path in potential_paths:
+                contact_url = f"{base_url}{path}"
+                if contact_url not in self.contact_pages:
+                    self.contact_pages.append(contact_url)
+        
+        # Sort contact pages by likelihood score
+        scored_pages = []
+        for page in self.contact_pages:
+            score = is_likely_contact_page(page)
+            scored_pages.append((page, score))
+        
+        # Sort by score (highest first)
+        scored_pages.sort(key=lambda x: x[1], reverse=True)
+        
+        # Extract just the URLs, preserving order
+        sorted_contact_pages = [page for page, _ in scored_pages]
+        
         # Limit to the top MAX_CONTACT_PAGES contact pages
-        return self.contact_pages[:MAX_CONTACT_PAGES]
+        return sorted_contact_pages[:MAX_CONTACT_PAGES]
     
     async def _crawl_for_contact_pages(self, url, base_url):
         """

@@ -71,10 +71,8 @@ CONTACT_KEYWORDS = {
     'ga': ['teagmháil', 'teagmhail', 'fúinn', 'fuinn', 'foireann', 'eolas dlíthiúil', 'eolas dlithiuil'],
 }
 
-# Flatten the contact keywords for easier searching
-ALL_CONTACT_KEYWORDS = set()
-for lang_keywords in CONTACT_KEYWORDS.values():
-    ALL_CONTACT_KEYWORDS.update(lang_keywords)
+# We no longer need to flatten contact keywords since our new approach is language-agnostic
+# and doesn't rely on hardcoded terms
 
 def get_random_user_agent():
     """Return a random user agent from the configured list."""
@@ -116,61 +114,173 @@ def is_same_domain(url1, url2):
     """Check if two URLs belong to the same domain."""
     return get_domain(url1) == get_domain(url2)
 
+def get_contact_page_patterns():
+    """
+    Intelligently generate contact page patterns without hardcoded paths.
+    Uses structural analysis of common URL patterns across languages.
+    
+    Returns a tuple of (structural_patterns, position_indicators, common_url_segments)
+    """
+    # Structural patterns based on URL path analysis
+    structural_patterns = [
+        # Common URL structure patterns (language-agnostic)
+        r'/[^/]{3,15}/?$',  # Short single-word paths at the end of URL
+        r'/[^/]{3,15}/form/?$',  # Contact form pages
+        r'/[^/]{3,15}-[^/]{2,10}/?$',  # Hyphenated paths (like contact-us)
+        r'/[^/]{3,15}_[^/]{2,10}/?$',  # Underscore paths (like contact_us)
+        r'/[a-z]{2}/[^/]{3,15}/?$',  # Language prefix followed by short path
+    ]
+    
+    # Position indicators - common positions in site hierarchy
+    position_indicators = [
+        r'^https?://[^/]+/[^/]+/?$',  # Top-level pages
+        r'^https?://[^/]+/[a-z]{2}/[^/]+/?$',  # Top-level with language code
+    ]
+    
+    # Common URL segments that might indicate contact pages (structural, not linguistic)
+    common_url_segments = [
+        '/c/',  # Abbreviated paths
+        '/info/',
+        '/support/',
+        '/help/',
+        '/reach/',
+        '/connect/',
+        '/get-in-touch/',
+        '/write-to-us/',
+        '/feedback/',
+    ]
+    
+    return structural_patterns, position_indicators, common_url_segments
+
 def is_likely_contact_page(url, link_text=None):
     """
-    Determine if a URL is likely to be a contact page based on its URL and link text.
+    Intelligently determine if a URL is likely to be a contact page using structural analysis.
+    This approach doesn't rely on hardcoded language-specific terms.
+    
     Returns a score from 0-10 indicating likelihood (10 being highest).
     """
     score = 0
     url_lower = url.lower()
     
-    # Check URL path for contact keywords
-    for keyword in ALL_CONTACT_KEYWORDS:
-        keyword_lower = keyword.lower()
-        # Exact match in path gets higher score
-        if f"/{keyword_lower}" in url_lower or f"/{keyword_lower}/" in url_lower:
-            score += 7
-            break
-        # Partial match in URL
-        elif keyword_lower in url_lower:
-            score += 5
-            break
+    # 1. URL Structure Analysis
     
-    # If link text is provided, check it for contact keywords
-    if link_text:
-        link_text_lower = link_text.lower()
-        for keyword in ALL_CONTACT_KEYWORDS:
-            keyword_lower = keyword.lower()
-            # Exact match in link text gets higher score
-            if link_text_lower == keyword_lower:
-                score += 8
-                break
-            # Partial match in link text
-            elif keyword_lower in link_text_lower:
-                score += 5
-                break
+    # Check for short paths at the end of the URL (typical of contact pages)
+    path = urlparse(url_lower).path
+    path_segments = [s for s in path.split('/') if s]
     
-    # Check for common contact page patterns in URL
-    contact_patterns = [
-        r'/contact', r'/kontakt', r'/contacto', r'/contatti', r'/contact-us',
-        r'/about', r'/about-us', r'/ueber-uns', r'/impressum', r'/imprint',
-        r'/get-in-touch', r'/reach-us', r'/reach-out', r'/connect'
-    ]
+    # Contact pages often have short paths with few segments
+    if len(path_segments) == 1 and 3 <= len(path_segments[0]) <= 15:
+        score += 3
+    elif len(path_segments) == 1 and len(path_segments[0]) <= 2:  # Ultra-abbreviated paths like /c or /i
+        score += 4  # Give higher score to ultra-abbreviated paths
     
-    for pattern in contact_patterns:
+    # Contact pages are often at the top level of the site
+    if len(path_segments) <= 2:
+        score += 2
+    
+    # Get structural patterns
+    structural_patterns, position_indicators, common_url_segments = get_contact_page_patterns()
+    
+    # Check structural patterns
+    for pattern in structural_patterns:
         if re.search(pattern, url_lower):
             score += 3
             break
     
-    # Boost score for URLs with 'contact' or equivalent in the path
-    if '/contact' in url_lower or '/kontakt' in url_lower:
-        score += 2
+    # Check position in site hierarchy
+    for pattern in position_indicators:
+        if re.search(pattern, url_lower):
+            score += 2
+            break
+    
+    # Check common URL segments
+    for segment in common_url_segments:
+        if segment in url_lower:
+            score += 2
+            break
+    
+    # Special case for ultra-abbreviated paths like /c/f (contact form)
+    if re.search(r'^/[a-z]/[a-z]/?$', path):
+        score += 3
+    
+    # 2. Link Text Analysis (if provided)
+    if link_text:
+        link_text_lower = link_text.lower()
+        
+        # Short link texts are common for contact pages
+        if len(link_text_lower) <= 15:
+            score += 1
+        
+        # Check for common structural patterns in link text
+        if re.search(r'^[^\s]{3,15}$', link_text_lower):  # Single short word
+            score += 2
+        
+        if re.search(r'^[^\s]{3,10}\s[^\s]{2,5}$', link_text_lower):  # Two short words
+            score += 2
+        
+        # Check for icons or symbols often used with contact links
+        if '@' in link_text or '✉' in link_text or '📧' in link_text or '📞' in link_text:
+            score += 3
+            
+        # Check for contact-related terms in link text (language-agnostic approach)
+        contact_indicators = ['contact', 'email', 'mail', 'message', 'send', 'write', 
+                             'touch', 'reach', 'connect', 'feedback', 'help', 'support',
+                             'info', 'information', 'form']  # Added info, information, form
+        for indicator in contact_indicators:
+            if indicator in link_text_lower:
+                score += 2
+                break
+    
+    # 3. TLD and Domain Analysis
+    
+    # Check if the domain suggests a specific country/language
+    tld = urlparse(url_lower).netloc.split('.')[-1]
+    if tld in ['de', 'fr', 'es', 'it', 'nl', 'pl', 'se', 'dk', 'fi', 'gr', 'pt', 'cz', 'hu', 'ro', 'bg', 'hr', 'ee', 'lv', 'lt', 'si', 'sk', 'mt', 'ie']:
+        # For country-specific domains, we can infer they're more likely to be important pages
+        if len(path_segments) <= 2:
+            score += 1
+    
+    # 4. Penalize patterns unlikely to be contact pages
     
     # Penalize very long URLs (likely not contact pages)
     if len(url) > 100:
         score -= 2
     
-    return min(score, 10)  # Cap at 10
+    # Penalize URLs with many query parameters
+    if '?' in url and len(url.split('?')[1]) > 20:
+        score -= 1
+    
+    # Penalize URLs that look like product or category pages
+    product_indicators = [
+        r'/product', r'/category', r'/shop', r'/store', r'/item', r'/catalog',
+        r'/collection', r'/gallery', r'/portfolio', r'/blog', r'/news', r'/article',
+        r'/p/', r'/download', r'/media', r'/image', r'/video',  # Removed /c/ and /i/ as they can be abbreviations
+        r'/tag/', r'/search', r'/filter', r'/sort', r'/list', r'/view', r'/cart',
+        r'/checkout', r'/payment', r'/order', r'/shipping', r'/delivery',
+        r'/\d{4}/', r'/\d{2}-\d{2}-\d{4}/'  # Date patterns
+    ]
+    
+    for pattern in product_indicators:
+        if re.search(pattern, url_lower):
+            score -= 3
+            break
+    
+    # 5. Contextual boosting
+    
+    # Boost URLs with email-related segments
+    if 'mail' in url_lower or 'email' in url_lower or 'message' in url_lower:
+        score += 2
+    
+    # Boost URLs with form-related segments
+    if 'form' in url_lower or 'send' in url_lower or 'submit' in url_lower:
+        score += 1
+    
+    # Boost URLs with info-related segments
+    if 'info' in url_lower or 'information' in url_lower:
+        score += 1
+    
+    # Ensure score is between 0 and 10
+    return min(max(score, 0), 10)
 
 def extract_emails_from_text(text):
     """Extract email addresses from text using regex."""
