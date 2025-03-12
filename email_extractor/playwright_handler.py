@@ -373,28 +373,41 @@ class PlaywrightHandler:
                 parsed_url = urlparse(base_url)
                 base_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"
                 
-                # Get dynamically generated patterns
-                exact_patterns, partial_patterns, _ = get_contact_page_patterns()
+                # Get structural patterns for intelligent URL construction
+                structural_patterns, position_indicators, common_url_segments = get_contact_page_patterns()
                 
-                # Extract the path part from the patterns (removing regex markers)
-                common_paths = set()
+                # Generate potential contact page URLs based on structural patterns
+                potential_paths = set()
                 
-                # Process exact patterns (removing regex markers)
-                for pattern in exact_patterns:
-                    # Extract the path by removing regex markers
-                    path = pattern.replace('/?$', '').replace('\\', '')
-                    if path and path not in common_paths:
-                        common_paths.add(path)
+                # Add common URL segments as potential paths
+                for segment in common_url_segments:
+                    potential_paths.add(segment)
                 
-                # Process partial patterns (removing regex markers)
-                for pattern in partial_patterns:
-                    # Extract the path by removing regex markers
-                    path = pattern.replace('\\', '')
-                    if path and path not in common_paths:
-                        common_paths.add(path)
+                # Generate paths based on common structural patterns
+                # For example, short single-word paths that are common for contact pages
+                potential_paths.add('/contact')
+                potential_paths.add('/about')
+                potential_paths.add('/info')
+                
+                # Add language-agnostic structural patterns
+                potential_paths.add('/c')  # Abbreviated form
+                potential_paths.add('/i')  # Info abbreviated
+                potential_paths.add('/help')
+                potential_paths.add('/support')
+                
+                # Try with common TLD-based language patterns if applicable
+                tld = parsed_url.netloc.split('.')[-1]
+                if tld in ['de', 'at', 'ch']:  # German-speaking countries
+                    potential_paths.add('/kontakt')
+                elif tld in ['fr', 'be']:  # French-speaking countries
+                    potential_paths.add('/contact')
+                elif tld in ['es']:  # Spanish-speaking countries
+                    potential_paths.add('/contacto')
+                elif tld in ['it']:  # Italian-speaking countries
+                    potential_paths.add('/contatti')
                 
                 # Add common contact page URLs to the list if they're not already there
-                for path in common_paths:
+                for path in potential_paths:
                     contact_url = f"{base_domain}{path}"
                     if contact_url not in seen:
                         seen.add(contact_url)

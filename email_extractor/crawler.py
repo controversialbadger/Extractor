@@ -116,34 +116,47 @@ class Crawler:
         
         # If still no contact pages found, try to construct common contact page URLs
         if len(self.contact_pages) == 0:
-            logger.info("No contact pages found, trying common contact page patterns")
+            logger.info("No contact pages found, trying intelligent URL construction")
             
             # Parse the base URL
             parsed_url = urlparse(url)
             base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
             
-            # Get dynamically generated patterns
-            exact_patterns, partial_patterns, _ = get_contact_page_patterns()
+            # Get structural patterns for intelligent URL construction
+            structural_patterns, position_indicators, common_url_segments = get_contact_page_patterns()
             
-            # Extract the path part from the patterns (removing regex markers)
-            common_paths = set()
+            # Generate potential contact page URLs based on structural patterns
+            potential_paths = set()
             
-            # Process exact patterns (removing regex markers)
-            for pattern in exact_patterns:
-                # Extract the path by removing regex markers
-                path = pattern.replace('/?$', '').replace('\\', '')
-                if path and path not in common_paths:
-                    common_paths.add(path)
+            # Add common URL segments as potential paths
+            for segment in common_url_segments:
+                potential_paths.add(segment)
             
-            # Process partial patterns (removing regex markers)
-            for pattern in partial_patterns:
-                # Extract the path by removing regex markers
-                path = pattern.replace('\\', '')
-                if path and path not in common_paths:
-                    common_paths.add(path)
+            # Generate paths based on common structural patterns
+            # For example, short single-word paths that are common for contact pages
+            potential_paths.add('/contact')
+            potential_paths.add('/about')
+            potential_paths.add('/info')
+            
+            # Add language-agnostic structural patterns
+            potential_paths.add('/c')  # Abbreviated form
+            potential_paths.add('/i')  # Info abbreviated
+            potential_paths.add('/help')
+            potential_paths.add('/support')
+            
+            # Try with common TLD-based language patterns if applicable
+            tld = parsed_url.netloc.split('.')[-1]
+            if tld in ['de', 'at', 'ch']:  # German-speaking countries
+                potential_paths.add('/kontakt')
+            elif tld in ['fr', 'be']:  # French-speaking countries
+                potential_paths.add('/contact')
+            elif tld in ['es']:  # Spanish-speaking countries
+                potential_paths.add('/contacto')
+            elif tld in ['it']:  # Italian-speaking countries
+                potential_paths.add('/contatti')
             
             # Add common contact page URLs to the list
-            for path in common_paths:
+            for path in potential_paths:
                 contact_url = f"{base_url}{path}"
                 if contact_url not in self.contact_pages:
                     self.contact_pages.append(contact_url)
