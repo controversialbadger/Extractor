@@ -10,7 +10,7 @@ from config import (
     MAX_CONTACT_PAGES, MAX_PAGES_PER_DOMAIN, GLOBAL_TIMEOUT,
     CONTACT_PAGE_SEARCH_TIMEOUT
 )
-from utils import normalize_url, is_same_domain, logger, is_likely_contact_page
+from utils import normalize_url, is_same_domain, logger, is_likely_contact_page, get_contact_page_patterns
 
 class Crawler:
     """Handles the crawling logic for finding contact pages."""
@@ -122,15 +122,28 @@ class Crawler:
             parsed_url = urlparse(url)
             base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
             
-            # Common contact page paths in multiple languages
-            common_contact_paths = [
-                "/contact", "/contact-us", "/contacte", "/kontakt", 
-                "/contacto", "/contatti", "/about-us", "/about",
-                "/impressum", "/imprint"
-            ]
+            # Get dynamically generated patterns
+            exact_patterns, partial_patterns, _ = get_contact_page_patterns()
+            
+            # Extract the path part from the patterns (removing regex markers)
+            common_paths = set()
+            
+            # Process exact patterns (removing regex markers)
+            for pattern in exact_patterns:
+                # Extract the path by removing regex markers
+                path = pattern.replace('/?$', '').replace('\\', '')
+                if path and path not in common_paths:
+                    common_paths.add(path)
+            
+            # Process partial patterns (removing regex markers)
+            for pattern in partial_patterns:
+                # Extract the path by removing regex markers
+                path = pattern.replace('\\', '')
+                if path and path not in common_paths:
+                    common_paths.add(path)
             
             # Add common contact page URLs to the list
-            for path in common_contact_paths:
+            for path in common_paths:
                 contact_url = f"{base_url}{path}"
                 if contact_url not in self.contact_pages:
                     self.contact_pages.append(contact_url)

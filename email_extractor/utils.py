@@ -116,6 +116,54 @@ def is_same_domain(url1, url2):
     """Check if two URLs belong to the same domain."""
     return get_domain(url1) == get_domain(url2)
 
+def get_contact_page_patterns():
+    """
+    Dynamically generate contact page patterns from the CONTACT_KEYWORDS dictionary.
+    Returns a tuple of (exact_patterns, partial_patterns, contact_terms)
+    """
+    # Generate exact match patterns (with word boundaries)
+    exact_patterns = []
+    for keyword in ALL_CONTACT_KEYWORDS:
+        # Convert spaces to hyphens and underscores for URL-friendly versions
+        keyword_dash = keyword.replace(' ', '-')
+        keyword_underscore = keyword.replace(' ', '_')
+        
+        # Add patterns with trailing slash optional
+        exact_patterns.append(fr'/{re.escape(keyword)}/?$')
+        
+        # Add URL-friendly versions if they're different from the original
+        if keyword != keyword_dash:
+            exact_patterns.append(fr'/{re.escape(keyword_dash)}/?$')
+        if keyword != keyword_underscore:
+            exact_patterns.append(fr'/{re.escape(keyword_underscore)}/?$')
+    
+    # Generate partial match patterns (for use in URL path)
+    partial_patterns = []
+    for keyword in ALL_CONTACT_KEYWORDS:
+        # Convert spaces to hyphens and underscores for URL-friendly versions
+        keyword_dash = keyword.replace(' ', '-')
+        keyword_underscore = keyword.replace(' ', '_')
+        
+        # Add patterns
+        partial_patterns.append(fr'/{re.escape(keyword)}')
+        
+        # Add URL-friendly versions if they're different from the original
+        if keyword != keyword_dash:
+            partial_patterns.append(fr'/{re.escape(keyword_dash)}')
+        if keyword != keyword_underscore:
+            partial_patterns.append(fr'/{re.escape(keyword_underscore)}')
+    
+    # Generate common contact terms for boosting scores
+    contact_terms = []
+    primary_contact_terms = ['contact', 'kontakt', 'contacto', 'contatti', 'contacte', 'kapcsolat', 
+                            'contato', 'contactar', 'contacta', 'yhteystiedot', 'επικοινωνία', 
+                            'kontakti', 'kontaktai', 'teagmháil', 'hafa samband', 'cysylltu']
+    
+    for term in primary_contact_terms:
+        contact_terms.append(f'/{term}')
+    
+    return exact_patterns, partial_patterns, contact_terms
+
 def is_likely_contact_page(url, link_text=None):
     """
     Determine if a URL is likely to be a contact page based on its URL and link text.
@@ -124,15 +172,11 @@ def is_likely_contact_page(url, link_text=None):
     score = 0
     url_lower = url.lower()
     
-    # Exact contact page path match gets highest priority
-    exact_contact_patterns = [
-        r'/contact/?$', r'/kontakt/?$', r'/contacto/?$', r'/contatti/?$', r'/contact-us/?$',
-        r'/contacte/?$', r'/contactez-nous/?$', r'/contactenos/?$', r'/kapcsolat/?$',
-        r'/contato/?$', r'/contacto/?$', r'/contactar/?$', r'/contacte-ne/?$',
-        r'/contactar-nos/?$', r'/contacta/?$', r'/contacta-nos/?$', r'/contactanos/?$'
-    ]
+    # Get dynamically generated patterns
+    exact_patterns, partial_patterns, contact_terms = get_contact_page_patterns()
     
-    for pattern in exact_contact_patterns:
+    # Exact contact page path match gets highest priority
+    for pattern in exact_patterns:
         if re.search(pattern, url_lower):
             score += 10  # Maximum score for exact contact page match
             return score  # Return immediately as this is the highest priority
@@ -153,51 +197,27 @@ def is_likely_contact_page(url, link_text=None):
     if link_text:
         link_text_lower = link_text.lower()
         
-        # Exact match for "contact" or equivalent in link text gets highest score
-        exact_contact_keywords = [
-            'contact', 'kontakt', 'contacto', 'contatti', 'contact us', 'contacte',
-            'contactez-nous', 'contactenos', 'kapcsolat', 'contato', 'contactar',
-            'contacte-ne', 'contactar-nos', 'contacta', 'contacta-nos', 'contactanos'
-        ]
-        
-        for keyword in exact_contact_keywords:
-            if link_text_lower == keyword:
+        # Check for exact match in link text
+        for keyword in ALL_CONTACT_KEYWORDS:
+            if link_text_lower == keyword.lower():
                 score += 9
                 break
         
-        # Check other contact keywords
-        for keyword in ALL_CONTACT_KEYWORDS:
-            keyword_lower = keyword.lower()
-            # Exact match in link text gets higher score
-            if link_text_lower == keyword_lower:
-                score += 8
-                break
-            # Partial match in link text
-            elif keyword_lower in link_text_lower:
-                score += 5
-                break
+        # Check for partial match in link text
+        if score < 9:  # Only check if we didn't already find an exact match
+            for keyword in ALL_CONTACT_KEYWORDS:
+                keyword_lower = keyword.lower()
+                if keyword_lower in link_text_lower:
+                    score += 5
+                    break
     
     # Check for common contact page patterns in URL
-    contact_patterns = [
-        r'/contact', r'/kontakt', r'/contacto', r'/contatti', r'/contact-us',
-        r'/about', r'/about-us', r'/ueber-uns', r'/impressum', r'/imprint',
-        r'/get-in-touch', r'/reach-us', r'/reach-out', r'/connect',
-        r'/contacte', r'/contactez-nous', r'/contactenos', r'/kapcsolat',
-        r'/contato', r'/contactar', r'/contacte-ne', r'/contactar-nos',
-        r'/contacta', r'/contacta-nos', r'/contactanos'
-    ]
-    
-    for pattern in contact_patterns:
+    for pattern in partial_patterns:
         if re.search(pattern, url_lower):
             score += 3
             break
     
     # Boost score for URLs with 'contact' or equivalent in the path
-    contact_terms = [
-        '/contact', '/kontakt', '/contacto', '/contatti', '/contacte',
-        '/kapcsolat', '/contato', '/contactar', '/contacta'
-    ]
-    
     for term in contact_terms:
         if term in url_lower:
             score += 3

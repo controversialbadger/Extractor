@@ -17,7 +17,7 @@ from config import (
 from utils import (
     get_random_user_agent, extract_emails_from_text, 
     normalize_url, is_likely_contact_page, decode_email_entities,
-    logger
+    logger, get_contact_page_patterns
 )
 
 class PlaywrightHandler:
@@ -373,15 +373,28 @@ class PlaywrightHandler:
                 parsed_url = urlparse(base_url)
                 base_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"
                 
-                # Common contact page paths in multiple languages
-                common_contact_paths = [
-                    "/contact", "/contact-us", "/contacte", "/kontakt", 
-                    "/contacto", "/contatti", "/about-us", "/about",
-                    "/impressum", "/imprint"
-                ]
+                # Get dynamically generated patterns
+                exact_patterns, partial_patterns, _ = get_contact_page_patterns()
+                
+                # Extract the path part from the patterns (removing regex markers)
+                common_paths = set()
+                
+                # Process exact patterns (removing regex markers)
+                for pattern in exact_patterns:
+                    # Extract the path by removing regex markers
+                    path = pattern.replace('/?$', '').replace('\\', '')
+                    if path and path not in common_paths:
+                        common_paths.add(path)
+                
+                # Process partial patterns (removing regex markers)
+                for pattern in partial_patterns:
+                    # Extract the path by removing regex markers
+                    path = pattern.replace('\\', '')
+                    if path and path not in common_paths:
+                        common_paths.add(path)
                 
                 # Add common contact page URLs to the list if they're not already there
-                for path in common_contact_paths:
+                for path in common_paths:
                     contact_url = f"{base_domain}{path}"
                     if contact_url not in seen:
                         seen.add(contact_url)
